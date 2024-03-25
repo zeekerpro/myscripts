@@ -35,7 +35,6 @@
 # Date: 2024-03-25
 ################################################################################
 
-
 # PostgreSQL installations path
 PG_PATH="/Users/zeeker/.asdf/installs/postgres/"
 
@@ -45,8 +44,8 @@ list_versions() {
     for dir in $PG_PATH*; do
         if [ -d "$dir" ]; then
             version=$(basename "$dir")
-            # Check if PostgreSQL version is running
-            if pg_ctl -D "$dir" status >/dev/null 2>&1; then
+            # Check if PostgreSQL version is running, assuming data directory structure
+            if pg_ctl -D "${dir}/data" status >/dev/null 2>&1; then
                 status="running"
             else
                 status="stopped"
@@ -61,13 +60,13 @@ start_version() {
     requested_version=$1
     # Stop all running versions first
     for dir in $PG_PATH*; do
-        if [ -d "$dir" ] && pg_ctl -D "$dir" status >/dev/null 2>&1; then
-            pg_ctl -D "$dir" stop
+        if [ -d "$dir" ] && pg_ctl -D "${dir}/data" status >/dev/null 2>&1; then
+            pg_ctl -D "${dir}/data" stop -l "${dir}/log/pg.log"
         fi
     done
-    # Start the requested version
-    if [ -d "$PG_PATH$requested_version" ]; then
-        pg_ctl -D "$PG_PATH$requested_version" start
+    # Start the requested version, assuming data and log directory structure
+    if [ -d "${PG_PATH}${requested_version}/data" ]; then
+        pg_ctl -D "${PG_PATH}${requested_version}/data" start -l "${PG_PATH}${requested_version}/log/pg.log"
         echo "PostgreSQL version $requested_version started."
     else
         echo "Version $requested_version not found."
@@ -77,8 +76,8 @@ start_version() {
 # Function to stop a specific PostgreSQL version
 stop_version() {
     requested_version=$1
-    if [ -d "$PG_PATH$requested_version" ]; then
-        pg_ctl -D "$PG_PATH$requested_version" stop
+    if [ -d "${PG_PATH}${requested_version}/data" ]; then
+        pg_ctl -D "${PG_PATH}${requested_version}/data" stop -l "${PG_PATH}${requested_version}/log/pg.log"
         echo "PostgreSQL version $requested_version stopped."
     else
         echo "Version $requested_version not found."
