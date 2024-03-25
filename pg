@@ -36,7 +36,7 @@
 ################################################################################
 
 # PostgreSQL installations path
-PG_PATH="/Users/zeeker/.asdf/installs/postgres/"
+PG_PATH="$HOME/.asdf/installs/postgres/"
 
 # Function to list all installed PostgreSQL versions and their status
 list_versions() {
@@ -61,12 +61,14 @@ start_version() {
     # Stop all running versions first
     for dir in $PG_PATH*; do
         if [ -d "$dir" ] && pg_ctl -D "${dir}/data" status >/dev/null 2>&1; then
+            echo "pg_ctl -D ${dir}/data stop -l ${dir}/log/pg.log"
             pg_ctl -D "${dir}/data" stop -l "${dir}/log/pg.log"
         fi
     done
     # Start the requested version, assuming data and log directory structure
     if [ -d "${PG_PATH}${requested_version}/data" ]; then
-        pg_ctl -D "${PG_PATH}${requested_version}/data" start -l "${PG_PATH}${requested_version}/log/pg.log"
+        echo "pg_ctl -D ${PG_PATH}${requested_version}/data restart -l ${PG_PATH}${requested_version}/log/pg.log"
+        pg_ctl -D "${PG_PATH}${requested_version}/data" restart -l "${PG_PATH}${requested_version}/log/pg.log"
         echo "PostgreSQL version $requested_version started."
     else
         echo "Version $requested_version not found."
@@ -77,6 +79,7 @@ start_version() {
 stop_version() {
     requested_version=$1
     if [ -d "${PG_PATH}${requested_version}/data" ]; then
+        echo "pg_ctl -D ${PG_PATH}${requested_version}/data stop -l ${PG_PATH}${requested_version}/log/pg.log"
         pg_ctl -D "${PG_PATH}${requested_version}/data" stop -l "${PG_PATH}${requested_version}/log/pg.log"
         echo "PostgreSQL version $requested_version stopped."
     else
