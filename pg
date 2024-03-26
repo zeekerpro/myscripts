@@ -1,129 +1,169 @@
-##!/bin/bash
+#!/bin/bash
 
-################################################################################
-# Script Name: pgsql
-# Description:
-#   This script provides a convenient way to manage multiple PostgreSQL versions
-#   installed on macOS via the asdf version manager. It allows users to list all
-#   installed PostgreSQL versions, start or stop specific versions, and restart
-#   them as needed. It ensures that at any given time, only one PostgreSQL version
-#   is actively running, aiding in development environments where multiple
-#   PostgreSQL versions are frequently switched between.
-#
-#   The script operates by interfacing with PostgreSQL installations located in
-#   the specified directory managed by asdf. It uses `pg_ctl` for controlling
-#   the PostgreSQL servers, offering a user-friendly command-line interface.
-#
-# Installation:
-#   1. Ensure that Bash, PostgreSQL, and the asdf version manager are installed on your system.
-#   2. Save this script as 'pgsql' in a directory included in your system's PATH.
-#   3. Make the script executable with the command: chmod +x pgsql
-#
-# Usage:
-#   pgsql list                 - Lists all installed PostgreSQL versions along with their status (running/stopped).
-#   pgsql start <version>      - Starts a specific PostgreSQL version, stopping others if necessary.
-#   pgsql stop <version>       - Stops the specified PostgreSQL version.
-#   pgsql restart <version>    - Restarts the specified PostgreSQL version, stopping others as required.
-#   pgsql help                 - Displays usage information and available commands.
-#
-# Note:
-#   This script is intended for use on macOS systems with PostgreSQL installed via asdf.
-#   Users should verify that `pg_ctl` is accessible in their PATH. Modify the script
-#   accordingly if your PostgreSQL installations or `pg_ctl` are located differently.
-#
-# Author: Zeeker
-# Date: 2024-03-25
-################################################################################
+# Script Name: manage_postgres_versions.sh
+# Description: Manages PostgreSQL versions ensuring only one instance runs at a time.
+#              Displays data and log paths to the user and uses direct PostgreSQL commands.
+# Usage: ./manage_postgres_versions.sh [command] [version]
+# Example: ./manage_postgres_versions.sh start 13.3
+# Author: ShellScriptor
+# Creation Date: YYYY-MM-DD
 
-# PostgreSQL installations path
-PG_PATH="$HOME/.asdf/installs/postgres/"
+PGDATA_BASE_PATH="$HOME/.asdf/installs/postgres"
 
-# Function to list all installed PostgreSQL versions and their status
+# Retrieves the full path to the PostgreSQL command for the specified version
+get_pg_command_path() {
+    local version="$1"
+    local command="$2"
+    echo "$HOME/.asdf/installs/postgres/$version/bin/$command"
+}
+
+# Stops all running PostgreSQL instances except for the version provided as an argument
+stop_other_postgres_instances() {
+    local skip_version="$1"
+    echo "Checking for other running PostgreSQL instances..."
+    local versions=$(asdf list postgres | sed 's/[* ]//g')
+
+    for version in $versions; do
+        if [ "$version" == "$skip_version" ]; then
+            continue
+        fi
+
+        local PGDATA="${PGDATA_BASE_PATH}/$version/data"
+        if [ ! -d "$PGDATA" ]; then
+            continue
+        fi
+
+        local pg_ctl_path=$(get_pg_command_path "$version" "pg_ctl")
+        local status_output=$("$pg_ctl_path" -D "${PGDATA}" status)
+
+        if [[ $status_output != *"no server running"* ]]; then
+            echo "Stopping PostgreSQL version $version..."
+            "$pg_ctl_path" -D "$PGDATA" stop
+        fi
+    done
+}
+
+# Lists installed PostgreSQL versions and their status
 list_versions() {
-    echo "Installed PostgreSQL Versions:"
-    for dir in $PG_PATH*; do
-        if [ -d "$dir" ]; then
-            version=$(basename "$dir")
-            # Check if PostgreSQL version is running, assuming data directory structure
-            if pg_ctl -D "${dir}/data" status >/dev/null 2>&1; then
-                status="running"
-            else
-                status="stopped"
+    echo "Listing installed PostgreSQL versions and their statuses:"
+    local versions=$(asdf list postgres | sed 's/[* ]//g')
+
+    for version in $versions; do
+        local PGDATA="${PGDATA_BASE_PATH}/$version/data"
+
+        if [ ! -d "$PGDATA" ]; then
+            echo "PostgreSQL version $version: Data directory not found"
+            continue
+        fi
+
+        local pg_ctl_path=$(get_pg_command_path "$version" "pg_ctl")
+        local status_output=$("$pg_ctl_path" -D "${PGDATA}" status)
+
+        if [[ $status_output == *"no server running"* ]]; then
+            echo "PostgreSQL version $version: Stopped"
+        else
+            echo "PostgreSQL version $version: Running"
+        fi
+    done
+}
+
+# Installs a new PostgreSQL version
+install_version() {
+    local version="$1"
+    if [ -z "$version" ]; then
+        echo "Error: No version specified. Please specify a version to install."
+        exit 1
+    fi
+
+    echo "Installing PostgreSQL version $version..."
+    asdf plugin-add postgres || true
+    asdf install postgres "$version"
+    echo "PostgreSQL version $version installation attempted."
+}
+
+# Sets a global PostgreSQL version
+set_global_version() {
+    local version="$1"
+    if [ -z "$version" ]; then
+        echo "Error: No version specified. Please specify a version to set as global."
+        exit 1
+    fi
+
+    echo "Setting PostgreSQL version $version as global..."
+    asdf global postgres "$version"
+}
+
+# Manages PostgreSQL versions with direct command execution
+manage_postgres() {
+    local action="$1"
+    local version=$(echo "$2" | sed 's/[* ]//g')
+
+    if [ -z "$version" ]; then
+        echo "Error: No version specified. Please specify a PostgreSQL version to $action."
+        exit 1
+    fi
+
+    local PGDATA="${PGDATA_BASE_PATH}/$version/data"
+    local PGLOGDIR="${PGDATA_BASE_PATH}/$version/log"
+    local PGLOG="${PGLOGDIR}/pg.log"
+    mkdir -p "$PGDATA" "$PGLOGDIR"
+
+    local pg_ctl_path=$(get_pg_command_path "$version" "pg_ctl")
+
+    echo "Data directory: $PGDATA"
+    echo "Log directory: $PGLOGDIR"
+
+    case "$action" in
+        start)
+            stop_other_postgres_instances "$version"
+            if [ -z "$(ls -A "$PGDATA")" ]; then
+                echo "Initializing database cluster in $PGDATA..."
+                local initdb_path=$(get_pg_command_path "$version" "initdb")
+                "$initdb_path" -D "$PGDATA"
             fi
-            echo "- $version ($status)"
-        fi
-    done
+            echo "Starting PostgreSQL version $version..."
+            "$pg_ctl_path" -D "$PGDATA" -l "$PGLOG" start
+            ;;
+        stop)
+            echo "Stopping PostgreSQL version $version..."
+            "$pg_ctl_path" -D "$PGDATA" stop
+            ;;
+        restart)
+            stop_other_postgres_instances "$version"
+            echo "Restarting PostgreSQL version $version..."
+            "$pg_ctl_path" -D "$PGDATA" stop
+            sleep 1 # Ensure stop completes
+            "$pg_ctl_path" -D "$PGDATA" -l "$PGLOG" start
+            ;;
+    esac
 }
 
-# Function to start a specific PostgreSQL version
-start_version() {
-    requested_version=$1
-    # Stop all running versions first
-    for dir in $PG_PATH*; do
-        if [ -d "$dir" ] && pg_ctl -D "${dir}/data" status >/dev/null 2>&1; then
-            echo "pg_ctl -D ${dir}/data stop -l ${dir}/log/pg.log"
-            pg_ctl -D "${dir}/data" stop -l "${dir}/log/pg.log"
-        fi
-    done
-    # Start the requested version, assuming data and log directory structure
-    if [ -d "${PG_PATH}${requested_version}/data" ]; then
-        echo "pg_ctl -D ${PG_PATH}${requested_version}/data restart -l ${PG_PATH}${requested_version}/log/pg.log"
-        pg_ctl -D "${PG_PATH}${requested_version}/data" restart -l "${PG_PATH}${requested_version}/log/pg.log"
-        echo "PostgreSQL version $requested_version started."
-    else
-        echo "Version $requested_version not found."
-    fi
-}
-
-# Function to stop a specific PostgreSQL version
-stop_version() {
-    requested_version=$1
-    if [ -d "${PG_PATH}${requested_version}/data" ]; then
-        echo "pg_ctl -D ${PG_PATH}${requested_version}/data stop -l ${PG_PATH}${requested_version}/log/pg.log"
-        pg_ctl -D "${PG_PATH}${requested_version}/data" stop -l "${PG_PATH}${requested_version}/log/pg.log"
-        echo "PostgreSQL version $requested_version stopped."
-    else
-        echo "Version $requested_version not found."
-    fi
-}
-
-# Function to restart a specific PostgreSQL version
-restart_version() {
-    requested_version=$1
-    stop_version $requested_version
-    start_version $requested_version
-}
-
-# Display help information
-show_help() {
-    echo "Usage: pgsql [command] [version]"
-    echo "Commands:"
-    echo "  list                    List all installed PostgreSQL versions."
-    echo "  start <version>         Start a specific PostgreSQL version."
-    echo "  stop <version>          Stop a specific PostgreSQL version."
-    echo "  restart <version>       Restart a specific PostgreSQL version."
-    echo "  help                    Show this help information."
-}
-
-# Parse command line arguments
-case $1 in
+# Main script logic
+case "$1" in
     list)
         list_versions
         ;;
-    start)
-        start_version $2
+    install)
+        install_version "$2"
         ;;
-    stop)
-        stop_version $2
+    global)
+        set_global_version "$2"
         ;;
-    restart)
-        restart_version $2
-        ;;
-    help)
-        show_help
+    start|stop|restart)
+        manage_postgres "$1" "$2"
         ;;
     *)
-        echo "Invalid command. Use 'pgsql help' for usage information."
+        echo "Usage: $0 {list|install|global|start|stop|restart} [version]"
+        echo "Commands:"
+        echo "  list - List installed PostgreSQL versions and their statuses"
+        echo "  install [version] - Install a new PostgreSQL version"
+        echo "  global [version] - Set a PostgreSQL version as global"
+        echo "  start [version] - Start a specific PostgreSQL version"
+        echo "  stop [version] - Stop a specific PostgreSQL version"
+        echo "  restart [version] - Restart a specific PostgreSQL version"
+        exit 1
         ;;
 esac
+
+exit 0
 
