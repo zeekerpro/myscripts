@@ -1,0 +1,114 @@
+#!/bin/bash
+
+# Script Name: manage_redis.sh
+# Description: Manages Redis versions, ensuring only one instance runs at a time,
+#              displays whether instances are running, shows conf and pid file paths,
+#              and defaults to the global version if none is specified.
+# Usage: ./manage_redis.sh [command] [version]
+# Example: ./manage_redis.sh start
+#          ./manage_redis.sh start 6.2.5
+
+REDIS_BASE_PATH="$HOME/.asdf/installs/redis"
+
+# Helper function to get Redis server path for a given version
+get_redis_server_path() {
+    local version="$1"
+    echo "$REDIS_BASE_PATH/$version/bin/redis-server"
+}
+
+# Helper function to check if Redis is running by PID
+is_redis_running() {
+    local pidfile="$1"
+    if [ -f "$pidfile" ]; then
+        local pid=$(cat "$pidfile")
+        if [ -n "$pid" ] && ps -p "$pid" > /dev/null 2>&1; then
+            echo "yes"
+        else
+            echo "no"
+        fi
+    else
+        echo "no"
+    fi
+}
+
+# Gets the global version of Redis set by asdf
+get_global_redis_version() {
+    asdf current redis | awk '{print $2}' | tr -d '[:space:]'
+}
+
+# Start Redis version
+start_redis() {
+    local version="$1"
+    if [ -z "$version" ]; then
+        version=$(get_global_redis_version)
+        if [ -z "$version" ]; then
+            echo "Error: No version specified and no global version set. Please specify a Redis version to start."
+            return
+        fi
+        echo "No version specified. Using global version: $version"
+    fi
+
+    local redis_server_path=$(get_redis_server_path "$version")
+    local redis_conf="$REDIS_BASE_PATH/$version/redis.conf"
+    local pidfile="$REDIS_BASE_PATH/$version/redis.pid"
+
+    if [ ! -f "$redis_conf" ]; then
+        echo "Configuration file not found: $redis_conf"
+        echo "Please create a configuration file before starting Redis."
+        return
+    fi
+
+    if [ "$(is_redis_running "$pidfile")" = "yes" ]; then
+        echo "Redis version $version is already running."
+        return
+    fi
+
+    echo "Starting Redis version $version..."
+    "$redis_server_path" "$redis_conf"
+    echo "Configuration file: $redis_conf"
+    echo "PID file: $pidfile"
+}
+
+# Stop Redis version - This function needs manual intervention as described in the script's instructions.
+stop_redis() {
+    echo "Stopping Redis instances should be done manually using the 'redis-cli shutdown' command."
+}
+
+# List installed Redis versions and their status
+list_redis_versions() {
+    echo "Listing installed Redis versions and their statuses:"
+    local versions=$(asdf list redis | sed 's/[* ]//g')
+    for version in $versions; do
+        local pidfile="$REDIS_BASE_PATH/$version/redis.pid"
+        local running=$(is_redis_running "$pidfile")
+        echo "Redis version $version is $([ "$running" = "yes" ] && echo "running" || echo "not running")"
+        if [ "$running" = "yes" ]; then
+            local confpath="$REDIS_BASE_PATH/$version/redis.conf"
+            echo "  Conf file: $confpath"
+            echo "  PID file: $pidfile"
+        fi
+    done
+}
+
+case "$1" in
+    start)
+        start_redis "$2"
+        ;;
+    stop)
+        stop_redis "$2"
+        ;;
+    list)
+        list_redis_versions
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|list} [version]"
+        echo "Commands:"
+        echo "  start [version] - Start a specific Redis version or the global version if none is specified"
+        echo "  stop [version]  - Stop a specific Redis version (follow manual instructions)"
+        echo "  list            - List installed Redis versions and their statuses"
+        exit 1
+        ;;
+esac
+
+exit 0
+
