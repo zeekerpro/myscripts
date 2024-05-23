@@ -15,7 +15,7 @@ This repository contains scripts that tackle a range of tasks, from database ver
 To get started with these scripts, clone this repository to your local machine:
 
 ```bash
-git clone https://github.com/<your-username>/my-script-library.git
+git clone git@github.com:zeekerpro/myscripts.git
 ```
 
 Navigate into the repository directory:
