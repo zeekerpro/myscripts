@@ -1,9 +1,6 @@
 #!/bin/bash
 # Script to manage frpc
 
-
-#!/bin/bash
-
 CONFIG_DIR="/opt/homebrew/etc/frp"
 LOG_DIR="/opt/homebrew/var/log"
 RUN_DIR="/opt/homebrew/var/run"
@@ -66,13 +63,27 @@ stop_frpc() {
 }
 
 status_frpc() {
+    if [ -z "$1" ]; then
+        echo "Status of all frpc configurations:"
+        for config in "$CONFIG_DIR"/*.toml; do
+            config_name=$(basename "$config" .toml)
+            check_status "$config_name"
+        done
+    else
+        local config_name="$1"
+        check_status "$config_name"
+    fi
+}
+
+check_status() {
     local config_name="$1"
     local pid_file=$(get_pid_file "$config_name")
 
+    printf "%-20s" "$config_name:"
     if [ -f "$pid_file" ] && kill -0 $(cat "$pid_file") 2>/dev/null; then
-        echo "frpc ($config_name) is running."
+        echo "Running (PID: $(cat "$pid_file"))"
     else
-        echo "frpc ($config_name) is not running."
+        echo "Not running"
     fi
 }
 
@@ -88,11 +99,11 @@ log_frpc() {
 }
 
 show_help() {
-    echo "Usage: $0 {list|start <config>|stop <config>|status <config>|log <config>|-h}"
+    echo "Usage: $0 {list|start <config>|stop <config>|status [<config>]|log <config>|-h}"
     echo "  list              - List available configurations"
     echo "  start <config>    - Start frpc with specified configuration"
     echo "  stop <config>     - Stop frpc with specified configuration"
-    echo "  status <config>   - Show frpc status for specified configuration"
+    echo "  status [<config>] - Show frpc status for all configurations or specified configuration"
     echo "  log <config>      - Show frpc log for specified configuration"
     echo "  -h                - Display this help message"
 }
@@ -101,13 +112,16 @@ case "$1" in
     list)
         list_configs
         ;;
-    start|stop|status|log)
+    start|stop|log)
         if [ -z "$2" ]; then
             echo "Error: Configuration name is required for $1 command."
             show_help
             exit 1
         fi
         "${1}_frpc" "$2"
+        ;;
+    status)
+        status_frpc "$2"
         ;;
     -h|--help)
         show_help
