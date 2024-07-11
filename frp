@@ -2,7 +2,7 @@
 # Script to manage frpc
 
 
-CONFIG_PATH="/opt/homebrew/etc/frp/frpc.ini"
+CONFIG_PATH="/opt/homebrew/etc/frp/frpc.toml"
 LOG_PATH="/opt/homebrew/var/log/frpc.log"
 FRPC_PID_FILE="/opt/homebrew/var/run/frpc.pid"
 
